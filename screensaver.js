@@ -1,20 +1,13 @@
 (function () {
-  'use strict';
+  "use strict";
 
-  const root = document.getElementById('root');
-  const help = document.getElementById('help');
+  const root = document.getElementById("root");
+  const help = document.getElementById("help");
   if (!root) return;
 
-  // Preferred video sources (first playable will be used by the browser)
-  const VIDEO_SOURCES = [
-    // Put MP4 first for maximum autoplay compatibility
-    { src: 'videoplayback.mp4', type: 'video/mp4' },
-    { src: 'poppy_opening.mp4', type: 'video/mp4' },
-    { src: 'poppy_screensaver.mov', type: 'video/quicktime' },
-    { src: 'poppy_opening_wihtout_background.mov', type: '' }
-  ];
+  const IMAGE_SRC = "images/coolguy_nobg.webp";
 
-  /** @typedef {{ el: HTMLDivElement, video: HTMLVideoElement, x: number, y: number, vx: number, vy: number, size: number, r: number }} Poppy */
+  /** @typedef {{ el: HTMLDivElement, img: HTMLImageElement, x: number, y: number, vx: number, vy: number, size: number, r: number }} Poppy */
   /** @type {Poppy[]} */
   const poppies = [];
 
@@ -24,8 +17,8 @@
   let rafId = null;
   let remotePollTimer = null;
   let addTimer = null;
-  const MIN_DELAY_MS = 60 * 1000;       // 1 minute
-  const MAX_DELAY_MS = 10 * 60 * 1000;  // 10 minutes
+  const MIN_DELAY_MS = 60 * 1000; // 1 minute
+  const MAX_DELAY_MS = 10 * 60 * 1000; // 10 minutes
 
   function randomBetween(min, max) {
     return Math.random() * (max - min) + min;
@@ -36,63 +29,20 @@
   }
 
   function createPoppyElement(size) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'poppy';
-    wrapper.style.width = size + 'px';
-    wrapper.style.height = 'auto';
-    wrapper.style.transform = 'translate3d(0,0,0)';
-    wrapper.style.pointerEvents = 'none';
+    const wrapper = document.createElement("div");
+    wrapper.className = "poppy";
+    wrapper.style.width = size + "px";
+    wrapper.style.height = "auto";
+    wrapper.style.transform = "translate3d(0,0,0)";
+    wrapper.style.pointerEvents = "none";
 
-    const video = document.createElement('video');
-    // Ensure autoplay works broadly
-    video.autoplay = true;
-    video.setAttribute('autoplay', '');
-    video.loop = true;
-    video.muted = true; // ensure autoplay works without user gesture
-    video.defaultMuted = true;
-    video.setAttribute('muted', '');
-    video.playsInline = true;
-    video.setAttribute('playsinline', '');
-    video.preload = 'auto';
-    video.setAttribute('webkit-playsinline', '');
-    video.style.display = 'block';
-    video.style.width = '100%';
-    video.style.height = 'auto';
+    const img = document.createElement("img");
+    img.src = IMAGE_SRC;
+    img.alt = "";
+    img.draggable = false;
 
-    for (let i = 0; i < VIDEO_SOURCES.length; i++) {
-      const { src, type } = VIDEO_SOURCES[i];
-      const source = document.createElement('source');
-      source.src = src;
-      if (type) source.type = type;
-      video.appendChild(source);
-    }
-
-    // Robust autoplay: keep nudging play until it starts or times out
-    const tryPlay = function () {
-      try { video.load(); } catch (_) {}
-      const playAttempt = () => video.play().catch(function () {});
-      let attempts = 0;
-      const maxAttempts = 30; // ~15s with 500ms interval
-      const interval = setInterval(function () {
-        if (!video.paused && !video.ended && video.readyState >= 2) {
-          clearInterval(interval);
-          return;
-        }
-        attempts += 1;
-        playAttempt();
-        if (attempts >= maxAttempts) {
-          clearInterval(interval);
-        }
-      }, 500);
-      // also kick immediately
-      playAttempt();
-    };
-    video.addEventListener('loadedmetadata', tryPlay, { once: true });
-    video.addEventListener('loadeddata', tryPlay, { once: true });
-    video.addEventListener('canplay', tryPlay, { once: true });
-
-    wrapper.appendChild(video);
-    return { wrapper, video };
+    wrapper.appendChild(img);
+    return { wrapper, img };
   }
 
   function spawnPoppyAt(x, y) {
@@ -103,7 +53,7 @@
     const vy = Math.sin(angle) * speed;
     const rotationDeg = Math.round(randomBetween(0, 360));
 
-    const { wrapper, video } = createPoppyElement(size);
+    const { wrapper, img } = createPoppyElement(size);
     root.appendChild(wrapper);
 
     // Keep entirely on-screen initially
@@ -111,10 +61,20 @@
     const maxY = Math.max(0, viewportHeight - size);
     const px = clamp(x - size / 2, 0, maxX);
     const py = clamp(y - size / 2, 0, maxY);
-    wrapper.style.transform = 'translate3d(' + px + 'px,' + py + 'px,0) rotate(' + rotationDeg + 'deg)';
+    wrapper.style.transform =
+      "translate3d(" + px + "px," + py + "px,0) rotate(" + rotationDeg + "deg)";
 
     /** @type {Poppy} */
-    const poppy = { el: wrapper, video: video, x: px, y: py, vx: vx, vy: vy, size: size, r: rotationDeg };
+    const poppy = {
+      el: wrapper,
+      img: img,
+      x: px,
+      y: py,
+      vx: vx,
+      vy: vy,
+      size: size,
+      r: rotationDeg,
+    };
     poppies.push(poppy);
   }
 
@@ -130,7 +90,6 @@
     for (let i = 0; i < poppies.length; i++) {
       const p = poppies[i];
       if (p && p.el && p.el.parentNode) {
-        try { p.video.pause(); } catch (e) {}
         p.el.parentNode.removeChild(p.el);
       }
     }
@@ -143,17 +102,23 @@
   // localStorage.setItem('poppy.remote.intervalMs', '3000')
   // Endpoint should return JSON like: { "count": 12 }
   function getRemoteConfig() {
-    const url = localStorage.getItem('poppy.remote.url') || '';
-    const intervalMs = parseInt(localStorage.getItem('poppy.remote.intervalMs') || '5000', 10);
-    return { url, intervalMs: isFinite(intervalMs) ? Math.max(1000, intervalMs) : 5000 };
+    const url = localStorage.getItem("poppy.remote.url") || "";
+    const intervalMs = parseInt(
+      localStorage.getItem("poppy.remote.intervalMs") || "5000",
+      10,
+    );
+    return {
+      url,
+      intervalMs: isFinite(intervalMs) ? Math.max(1000, intervalMs) : 5000,
+    };
   }
 
   async function fetchTargetCount(url) {
     try {
-      const res = await fetch(url, { cache: 'no-store' });
+      const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) return null;
       const data = await res.json();
-      if (data && typeof data.count === 'number' && isFinite(data.count)) {
+      if (data && typeof data.count === "number" && isFinite(data.count)) {
         return Math.max(0, Math.floor(data.count));
       }
       return null;
@@ -172,7 +137,6 @@
       for (let i = 0; i < toRemove; i++) {
         const p = poppies.pop();
         if (p && p.el && p.el.parentNode) {
-          try { p.video.pause(); } catch (_) {}
           p.el.parentNode.removeChild(p.el);
         }
       }
@@ -185,7 +149,7 @@
     if (remotePollTimer) clearInterval(remotePollTimer);
     const tick = async function () {
       const target = await fetchTargetCount(url);
-      if (typeof target === 'number') reconcileCount(target);
+      if (typeof target === "number") reconcileCount(target);
     };
     tick();
     remotePollTimer = setInterval(tick, intervalMs);
@@ -196,14 +160,16 @@
     if (addTimer) clearTimeout(addTimer);
     const delayMs = Math.floor(randomBetween(MIN_DELAY_MS, MAX_DELAY_MS));
     addTimer = setTimeout(function () {
-      try { spawnRandom(1); } catch (_) {}
+      try {
+        spawnRandom(1);
+      } catch (_) {}
       scheduleNextAddition();
     }, delayMs);
   }
 
   function toggleHelp() {
     if (!help) return;
-    help.classList.toggle('hidden');
+    help.classList.toggle("hidden");
   }
 
   function animate(now) {
@@ -238,7 +204,8 @@
 
       p.x = nx;
       p.y = ny;
-      p.el.style.transform = 'translate3d(' + nx + 'px,' + ny + 'px,0) rotate(' + p.r + 'deg)';
+      p.el.style.transform =
+        "translate3d(" + nx + "px," + ny + "px,0) rotate(" + p.r + "deg)";
     }
 
     rafId = requestAnimationFrame(animate);
@@ -259,7 +226,7 @@
   }
 
   // Event bindings
-  window.addEventListener('resize', function () {
+  window.addEventListener("resize", function () {
     viewportWidth = window.innerWidth;
     viewportHeight = window.innerHeight;
   });
@@ -276,26 +243,32 @@
   // });
 
   // Keyboard controls
-  window.addEventListener('keydown', function (e) {
-    if (e.code === 'Space') {
+  window.addEventListener("keydown", function (e) {
+    if (e.code === "Space") {
       e.preventDefault();
       spawnRandom(1);
       return;
     }
-    const key = (e.key || '').toLowerCase();
-    if (key === 'c') {
+    const key = (e.key || "").toLowerCase();
+    if (key === "c") {
       clearAll();
-    } else if (key === 'h') {
+    } else if (key === "h") {
       toggleHelp();
     }
   });
 
   // Pause animation while tab not visible (saves energy)
-  document.addEventListener('visibilitychange', function () {
+  document.addEventListener("visibilitychange", function () {
     if (document.hidden) {
       stop();
-      if (remotePollTimer) { clearInterval(remotePollTimer); remotePollTimer = null; }
-      if (addTimer) { clearTimeout(addTimer); addTimer = null; }
+      if (remotePollTimer) {
+        clearInterval(remotePollTimer);
+        remotePollTimer = null;
+      }
+      if (addTimer) {
+        clearTimeout(addTimer);
+        addTimer = null;
+      }
     } else {
       start();
       startRemotePolling();
@@ -306,22 +279,45 @@
   // Start the animation loop (no poppies shown until user action)
   start();
   // Spawn exactly one poppy initially, then add one every 1–10 minutes
-  try { spawnRandom(1); } catch (e) {}
+  try {
+    spawnRandom(1);
+  } catch (e) {}
   scheduleNextAddition();
   // Start remote polling if configured
   startRemotePolling();
 
+  // --- Fetch test: hit example.org after 5s and show result ---
+  setTimeout(async function () {
+    const box = document.createElement("div");
+    box.id = "fetch-result";
+    box.textContent = "Fetching https://httpbin.org/get …";
+    document.body.appendChild(box);
+    try {
+      const res = await fetch("https://httpbin.org/get");
+      const text = await res.text();
+      box.textContent =
+        "✓ " + res.status + " " + res.statusText + "\n\n" + text.slice(0, 500);
+    } catch (err) {
+      box.classList.add("error");
+      box.textContent = "✗ Fetch failed:\n" + err;
+    }
+  }, 5000);
+
   // Expose a tiny control surface for manual tweaking
   window.Poppy = {
-    spawn: function (n) { spawnRandom(Math.max(1, n|0)); },
+    spawn: function (n) {
+      spawnRandom(Math.max(1, n | 0));
+    },
     clear: clearAll,
-    count: function () { return poppies.length; },
+    count: function () {
+      return poppies.length;
+    },
     setRemoteUrl: function (url, intervalMs) {
-      if (typeof url === 'string') localStorage.setItem('poppy.remote.url', url);
-      if (typeof intervalMs === 'number') localStorage.setItem('poppy.remote.intervalMs', String(intervalMs));
+      if (typeof url === "string")
+        localStorage.setItem("poppy.remote.url", url);
+      if (typeof intervalMs === "number")
+        localStorage.setItem("poppy.remote.intervalMs", String(intervalMs));
       startRemotePolling();
-    }
+    },
   };
 })();
-
-

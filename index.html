@@ -1,19 +1,30 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Poppy Screensaver</title>
     <style>
-      html, body {
+      html,
+      body {
         margin: 0;
         padding: 0;
         background: #000;
         height: 100%;
         overflow: hidden;
         color: #bbb;
-        font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        font-family:
+          -apple-system,
+          BlinkMacSystemFont,
+          Segoe UI,
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
         cursor: none;
@@ -30,8 +41,10 @@
         pointer-events: none;
         user-select: none;
         /* subtle red glow around the poppy (applied to wrapper for broader support) */
-        -webkit-filter: drop-shadow(0 0 5px rgba(255, 70, 70, 0.32)) drop-shadow(0 0 10px rgba(255, 40, 40, 0.12));
-        filter: drop-shadow(0 0 5px rgba(255, 70, 70, 0.32)) drop-shadow(0 0 10px rgba(255, 40, 40, 0.12));
+        -webkit-filter: drop-shadow(0 0 5px rgba(255, 70, 70, 0.32))
+          drop-shadow(0 0 10px rgba(255, 40, 40, 0.12));
+        filter: drop-shadow(0 0 5px rgba(255, 70, 70, 0.32))
+          drop-shadow(0 0 10px rgba(255, 40, 40, 0.12));
       }
       .poppy::before {
         content: "";
@@ -41,16 +54,17 @@
         transform: translate(-50%, -50%);
         width: 110%;
         height: 110%;
-        background: radial-gradient(ellipse at center,
+        background: radial-gradient(
+          ellipse at center,
           rgba(255, 70, 70, 0.13) 0%,
           rgba(255, 40, 40, 0.05) 48%,
           rgba(255, 20, 20, 0.015) 68%,
-          rgba(0,0,0,0) 83%
+          rgba(0, 0, 0, 0) 83%
         );
         filter: blur(4px);
         pointer-events: none;
       }
-      .poppy video {
+      .poppy img {
         display: block;
         width: 100%;
         height: auto;
@@ -62,7 +76,7 @@
         left: 16px;
         bottom: 16px;
         max-width: min(520px, 90vw);
-        background: rgba(20,20,20,0.7);
+        background: rgba(20, 20, 20, 0.7);
         color: #e8e8e8;
         padding: 12px 14px;
         border-radius: 8px;
@@ -71,16 +85,25 @@
         backdrop-filter: blur(6px);
         -webkit-backdrop-filter: blur(6px);
       }
-      .dim { color: #9aa0a6; }
-      .hidden { display: none; }
-      a { color: #9cd2ff; text-decoration: none; }
+      .dim {
+        color: #9aa0a6;
+      }
+      .hidden {
+        display: none;
+      }
+      a {
+        color: #9cd2ff;
+        text-decoration: none;
+      }
       kbd {
         background: #111;
         color: #ddd;
         border-radius: 4px;
         border: 1px solid #333;
         padding: 1px 6px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
         font-size: 12px;
       }
     </style>
@@ -88,17 +111,340 @@
   <body>
     <div id="root" aria-label="Poppy screensaver"></div>
     <div id="help" class="help">
-      <div><strong>Poppy screensaver</strong> — spawn floating flowers on a black canvas.</div>
-      <div class="dim" style="margin-top:6px">Controls:</div>
-      <ul style="margin:6px 0 0 18px; padding:0">
+      <div>
+        <strong>Poppy screensaver</strong> — spawn floating flowers on a black
+        canvas.
+      </div>
+      <div class="dim" style="margin-top: 6px">Controls:</div>
+      <ul style="margin: 6px 0 0 18px; padding: 0">
         <li><kbd>Space</kbd> or Click: add a poppy</li>
         <li>Shift+Click: add 5 poppies</li>
         <li><kbd>C</kbd>: clear all</li>
         <li><kbd>H</kbd>: toggle this help</li>
       </ul>
     </div>
-    <script src="screensaver.js" defer></script>
+    <script lang="js">
+      (function () {
+        "use strict";
+
+        const root = document.getElementById("root");
+        const help = document.getElementById("help");
+        if (!root) return;
+
+        const IMAGE_SRC = "macos_saver/images/coolguy_nobg.webp";
+
+        /** @typedef {{ el: HTMLDivElement, img: HTMLImageElement, x: number, y: number, vx: number, vy: number, size: number, r: number }} Poppy */
+        /** @type {Poppy[]} */
+        const poppies = [];
+
+        let viewportWidth = window.innerWidth;
+        let viewportHeight = window.innerHeight;
+        let lastTime = performance.now();
+        let rafId = null;
+        let remotePollTimer = null;
+        let addTimer = null;
+        const MIN_DELAY_MS = 60 * 1000; // 1 minute
+        const MAX_DELAY_MS = 10 * 60 * 1000; // 10 minutes
+
+        function randomBetween(min, max) {
+          return Math.random() * (max - min) + min;
+        }
+
+        function clamp(value, min, max) {
+          return Math.min(max, Math.max(min, value));
+        }
+
+        function createPoppyElement(size) {
+          const wrapper = document.createElement("div");
+          wrapper.className = "poppy";
+          wrapper.style.width = size + "px";
+          wrapper.style.height = "auto";
+          wrapper.style.transform = "translate3d(0,0,0)";
+          wrapper.style.pointerEvents = "none";
+
+          const img = document.createElement("img");
+          img.src = IMAGE_SRC;
+          img.alt = "";
+          img.draggable = false;
+
+          wrapper.appendChild(img);
+          return { wrapper, img };
+        }
+
+        function spawnPoppyAt(x, y) {
+          const size = Math.round(randomBetween(110, 240));
+          const speed = randomBetween(28, 80); // px per second
+          const angle = randomBetween(0, Math.PI * 2);
+          const vx = Math.cos(angle) * speed;
+          const vy = Math.sin(angle) * speed;
+          const rotationDeg = Math.round(randomBetween(0, 360));
+
+          const { wrapper, img } = createPoppyElement(size);
+          root.appendChild(wrapper);
+
+          // Keep entirely on-screen initially
+          const maxX = Math.max(0, viewportWidth - size);
+          const maxY = Math.max(0, viewportHeight - size);
+          const px = clamp(x - size / 2, 0, maxX);
+          const py = clamp(y - size / 2, 0, maxY);
+          wrapper.style.transform =
+            "translate3d(" +
+            px +
+            "px," +
+            py +
+            "px,0) rotate(" +
+            rotationDeg +
+            "deg)";
+
+          /** @type {Poppy} */
+          const poppy = {
+            el: wrapper,
+            img: img,
+            x: px,
+            y: py,
+            vx: vx,
+            vy: vy,
+            size: size,
+            r: rotationDeg,
+          };
+          poppies.push(poppy);
+        }
+
+        function spawnRandom(count) {
+          for (let i = 0; i < count; i++) {
+            const rx = Math.random() * viewportWidth;
+            const ry = Math.random() * viewportHeight;
+            spawnPoppyAt(rx, ry);
+          }
+        }
+
+        function clearAll() {
+          for (let i = 0; i < poppies.length; i++) {
+            const p = poppies[i];
+            if (p && p.el && p.el.parentNode) {
+              p.el.parentNode.removeChild(p.el);
+            }
+          }
+          poppies.length = 0;
+        }
+
+        // --- Remote control support ---
+        // Configure via localStorage:
+        // localStorage.setItem('poppy.remote.url', 'https://example.com/poppy-count.json')
+        // localStorage.setItem('poppy.remote.intervalMs', '3000')
+        // Endpoint should return JSON like: { "count": 12 }
+        function getRemoteConfig() {
+          const url = localStorage.getItem("poppy.remote.url") || "";
+          const intervalMs = parseInt(
+            localStorage.getItem("poppy.remote.intervalMs") || "5000",
+            10,
+          );
+          return {
+            url,
+            intervalMs: isFinite(intervalMs)
+              ? Math.max(1000, intervalMs)
+              : 5000,
+          };
+        }
+
+        async function fetchTargetCount(url) {
+          try {
+            const res = await fetch(url, { cache: "no-store" });
+            if (!res.ok) return null;
+            const data = await res.json();
+            if (
+              data &&
+              typeof data.count === "number" &&
+              isFinite(data.count)
+            ) {
+              return Math.max(0, Math.floor(data.count));
+            }
+            return null;
+          } catch (_) {
+            return null;
+          }
+        }
+
+        function reconcileCount(target) {
+          if (target == null) return;
+          const current = poppies.length;
+          if (target > current) {
+            spawnRandom(target - current);
+          } else if (target < current) {
+            const toRemove = current - target;
+            for (let i = 0; i < toRemove; i++) {
+              const p = poppies.pop();
+              if (p && p.el && p.el.parentNode) {
+                p.el.parentNode.removeChild(p.el);
+              }
+            }
+          }
+        }
+
+        function startRemotePolling() {
+          const { url, intervalMs } = getRemoteConfig();
+          if (!url) return;
+          if (remotePollTimer) clearInterval(remotePollTimer);
+          const tick = async function () {
+            const target = await fetchTargetCount(url);
+            if (typeof target === "number") reconcileCount(target);
+          };
+          tick();
+          remotePollTimer = setInterval(tick, intervalMs);
+        }
+
+        // Sequential addition: add one poppy every 1–10 minutes (randomized)
+        function scheduleNextAddition() {
+          if (addTimer) clearTimeout(addTimer);
+          const delayMs = Math.floor(randomBetween(MIN_DELAY_MS, MAX_DELAY_MS));
+          addTimer = setTimeout(function () {
+            try {
+              spawnRandom(1);
+            } catch (_) {}
+            scheduleNextAddition();
+          }, delayMs);
+        }
+
+        function toggleHelp() {
+          if (!help) return;
+          help.classList.toggle("hidden");
+        }
+
+        function animate(now) {
+          const dt = Math.min(0.05, (now - lastTime) / 1000); // clamp large frames to avoid tunneling
+          lastTime = now;
+
+          const maxX = viewportWidth;
+          const maxY = viewportHeight;
+
+          for (let i = 0; i < poppies.length; i++) {
+            const p = poppies[i];
+            const size = p.size;
+
+            let nx = p.x + p.vx * dt;
+            let ny = p.y + p.vy * dt;
+
+            if (nx <= 0) {
+              nx = 0;
+              p.vx = Math.abs(p.vx);
+            } else if (nx + size >= maxX) {
+              nx = maxX - size;
+              p.vx = -Math.abs(p.vx);
+            }
+
+            if (ny <= 0) {
+              ny = 0;
+              p.vy = Math.abs(p.vy);
+            } else if (ny + size >= maxY) {
+              ny = maxY - size;
+              p.vy = -Math.abs(p.vy);
+            }
+
+            p.x = nx;
+            p.y = ny;
+            p.el.style.transform =
+              "translate3d(" + nx + "px," + ny + "px,0) rotate(" + p.r + "deg)";
+          }
+
+          rafId = requestAnimationFrame(animate);
+        }
+
+        function start() {
+          if (rafId == null) {
+            lastTime = performance.now();
+            rafId = requestAnimationFrame(animate);
+          }
+        }
+
+        function stop() {
+          if (rafId != null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
+        }
+
+        // Event bindings
+        window.addEventListener("resize", function () {
+          viewportWidth = window.innerWidth;
+          viewportHeight = window.innerHeight;
+        });
+
+        // Click / tap spawning disabled per request
+        // root.addEventListener('pointerdown', function (e) {
+        //   const event = e;
+        //   const count = event.shiftKey ? 5 : 1;
+        //   for (let i = 0; i < count; i++) {
+        //     const jx = (Math.random() - 0.5) * 30;
+        //     const jy = (Math.random() - 0.5) * 30;
+        //     spawnPoppyAt(event.clientX + jx, event.clientY + jy);
+        //   }
+        // });
+
+        // Keyboard controls
+        window.addEventListener("keydown", function (e) {
+          if (e.code === "Space") {
+            e.preventDefault();
+            spawnRandom(1);
+            return;
+          }
+          const key = (e.key || "").toLowerCase();
+          if (key === "c") {
+            clearAll();
+          } else if (key === "h") {
+            toggleHelp();
+          }
+        });
+
+        // Pause animation while tab not visible (saves energy)
+        document.addEventListener("visibilitychange", function () {
+          if (document.hidden) {
+            stop();
+            if (remotePollTimer) {
+              clearInterval(remotePollTimer);
+              remotePollTimer = null;
+            }
+            if (addTimer) {
+              clearTimeout(addTimer);
+              addTimer = null;
+            }
+          } else {
+            start();
+            startRemotePolling();
+            if (!addTimer) scheduleNextAddition();
+          }
+        });
+
+        // Start the animation loop (no poppies shown until user action)
+        start();
+        // Spawn exactly one poppy initially, then add one every 1–10 minutes
+        try {
+          spawnRandom(1);
+        } catch (e) {}
+        scheduleNextAddition();
+        // Start remote polling if configured
+        startRemotePolling();
+
+        // Expose a tiny control surface for manual tweaking
+        window.Poppy = {
+          spawn: function (n) {
+            spawnRandom(Math.max(1, n | 0));
+          },
+          clear: clearAll,
+          count: function () {
+            return poppies.length;
+          },
+          setRemoteUrl: function (url, intervalMs) {
+            if (typeof url === "string")
+              localStorage.setItem("poppy.remote.url", url);
+            if (typeof intervalMs === "number")
+              localStorage.setItem(
+                "poppy.remote.intervalMs",
+                String(intervalMs),
+              );
+            startRemotePolling();
+          },
+        };
+      })();
+    </script>
   </body>
 </html>
-
-

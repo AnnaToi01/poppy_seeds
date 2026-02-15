@@ -293,15 +293,42 @@
     box.textContent = "Fetching https://httpbin.org/get …";
     document.body.appendChild(box);
     try {
-      const res = await fetch("https://httpbin.org/get");
-      const text = await res.text();
+      const SUPABASE_URL = "https://xhmagpbrqyrvptbawjqa.supabase.co";
+      const ANON_KEY = "sb_publishable_rNS7quNUnYko_0SUdrHiUw_H9UNRfDx";
+      const headers = {
+        apikey: ANON_KEY,
+        Authorization: `Bearer ${ANON_KEY}`,
+        "Content-Type": "application/json",
+      };
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/poppies`, {
+        method: "GET",
+        headers,
+      });
+
+      console.log("status", res.status);
+
+      const body = await res.json().catch(() => null);
+
       box.textContent =
-        "✓ " + res.status + " " + res.statusText + "\n\n" + text.slice(0, 500);
+        "✓ " +
+        res.status +
+        " " +
+        res.statusText +
+        "\n\n" +
+        JSON.stringify(body);
+
+      box.textContent =
+        "✓ " +
+        res.status +
+        " " +
+        res.statusText +
+        "\n\n" +
+        JSON.stringify(body).slice(0, 500);
     } catch (err) {
       box.classList.add("error");
       box.textContent = "✗ Fetch failed:\n" + err;
     }
-  }, 5000);
+  }, 100);
 
   // Expose a tiny control surface for manual tweaking
   window.Poppy = {

@@ -27,7 +27,6 @@
           sans-serif;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
-        cursor: none;
       }
       #root {
         position: fixed;
@@ -115,6 +114,19 @@
       #fetch-result.error {
         color: #ff6b6b;
       }
+      .poppy-label {
+        position: absolute;
+        bottom: -4px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #ccc;
+        font-size: 11px;
+        text-align: center;
+        white-space: pre-line;
+        pointer-events: none;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+        z-index: 2;
+      }
       a {
         color: #9cd2ff;
         text-decoration: none;
@@ -147,6 +159,7 @@
         <li><kbd>H</kbd>: toggle this help</li>
       </ul>
     </div>
+    <div id="fetch-result"></div>
     <script defer src="screensaver.js"></script>
   </body>
 </html>

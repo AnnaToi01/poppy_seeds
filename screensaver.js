@@ -7,7 +7,7 @@
 
   const IMAGE_SRC = "images/coolguy_nobg.webp";
 
-  /** @typedef {{ el: HTMLDivElement, img: HTMLImageElement, x: number, y: number, vx: number, vy: number, size: number, r: number }} Poppy */
+  /** @typedef {{ el: HTMLDivElement, img: HTMLImageElement, x: number, y: number, vx: number, vy: number, size: number, r: number, dbId: number|null }} Poppy */
   /** @type {Poppy[]} */
   const poppies = [];
 
@@ -16,9 +16,6 @@
   let lastTime = performance.now();
   let rafId = null;
   let remotePollTimer = null;
-  let addTimer = null;
-  const MIN_DELAY_MS = 60 * 1000; // 1 minute
-  const MAX_DELAY_MS = 10 * 60 * 1000; // 10 minutes
 
   function randomBetween(min, max) {
     return Math.random() * (max - min) + min;
@@ -28,7 +25,7 @@
     return Math.min(max, Math.max(min, value));
   }
 
-  function createPoppyElement(size) {
+  function createPoppyElement(size, label) {
     const wrapper = document.createElement("div");
     wrapper.className = "poppy";
     wrapper.style.width = size + "px";
@@ -42,10 +39,27 @@
     img.draggable = false;
 
     wrapper.appendChild(img);
+
+    if (label) {
+      const lbl = document.createElement("div");
+      lbl.className = "poppy-label";
+      lbl.textContent = label;
+      wrapper.appendChild(lbl);
+    }
+
     return { wrapper, img };
   }
 
-  function spawnPoppyAt(x, y) {
+  function formatTime(isoStr) {
+    try {
+      var d = new Date(isoStr);
+      return d.toLocaleString();
+    } catch (_) {
+      return isoStr;
+    }
+  }
+
+  function spawnPoppyAt(x, y, dbId, label) {
     const size = Math.round(randomBetween(110, 240));
     const speed = randomBetween(28, 80); // px per second
     const angle = randomBetween(0, Math.PI * 2);
@@ -53,7 +67,7 @@
     const vy = Math.sin(angle) * speed;
     const rotationDeg = Math.round(randomBetween(0, 360));
 
-    const { wrapper, img } = createPoppyElement(size);
+    const { wrapper, img } = createPoppyElement(size, label || null);
     root.appendChild(wrapper);
 
     // Keep entirely on-screen initially
@@ -74,6 +88,7 @@
       vy: vy,
       size: size,
       r: rotationDeg,
+      dbId: dbId || null,
     };
     poppies.push(poppy);
   }
@@ -96,75 +111,90 @@
     poppies.length = 0;
   }
 
-  // --- Remote control support ---
-  // Configure via localStorage:
-  // localStorage.setItem('poppy.remote.url', 'https://example.com/poppy-count.json')
-  // localStorage.setItem('poppy.remote.intervalMs', '3000')
-  // Endpoint should return JSON like: { "count": 12 }
-  function getRemoteConfig() {
-    const url = localStorage.getItem("poppy.remote.url") || "";
-    const intervalMs = parseInt(
-      localStorage.getItem("poppy.remote.intervalMs") || "5000",
-      10,
-    );
-    return {
-      url,
-      intervalMs: isFinite(intervalMs) ? Math.max(1000, intervalMs) : 5000,
-    };
+  // --- Remote control: fetch poppies from Supabase ---
+  const SUPABASE_URL = "https://xhmagpbrqyrvptbawjqa.supabase.co";
+  const ANON_KEY = "sb_publishable_rNS7quNUnYko_0SUdrHiUw_H9UNRfDx";
+  const POLL_INTERVAL_MS = 10000;
+
+  function getStatusBox() {
+    return document.getElementById("fetch-result");
   }
 
-  async function fetchTargetCount(url) {
+  async function fetchPoppies() {
+    const box = getStatusBox();
     try {
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) return null;
+      const res = await fetch(SUPABASE_URL + "/rest/v1/poppies", {
+        cache: "no-store",
+        headers: {
+          apikey: ANON_KEY,
+          Authorization: "Bearer " + ANON_KEY,
+        },
+      });
+      if (!res.ok) {
+        if (box) {
+          box.classList.add("error");
+          box.textContent = "Fetch error: " + res.status + " " + res.statusText;
+        }
+        return null;
+      }
       const data = await res.json();
-      if (data && typeof data.count === "number" && isFinite(data.count)) {
-        return Math.max(0, Math.floor(data.count));
+      if (Array.isArray(data)) {
+        if (box) {
+          box.classList.remove("error");
+          box.textContent = data.length + " poppies in db";
+        }
+        return data;
       }
       return null;
-    } catch (_) {
+    } catch (err) {
+      if (box) {
+        box.classList.add("error");
+        box.textContent = "Fetch failed: " + err;
+      }
       return null;
     }
   }
 
-  function reconcileCount(target) {
-    if (target == null) return;
-    const current = poppies.length;
-    if (target > current) {
-      spawnRandom(target - current);
-    } else if (target < current) {
-      const toRemove = current - target;
-      for (let i = 0; i < toRemove; i++) {
-        const p = poppies.pop();
-        if (p && p.el && p.el.parentNode) {
-          p.el.parentNode.removeChild(p.el);
-        }
+  function reconcilePoppies(records) {
+    if (!records) return;
+    // Build a set of IDs we already have
+    var existingIds = {};
+    for (var i = 0; i < poppies.length; i++) {
+      if (poppies[i].dbId != null) existingIds[poppies[i].dbId] = true;
+    }
+    // Build a set of IDs from the server
+    var serverIds = {};
+    for (var j = 0; j < records.length; j++) {
+      serverIds[records[j].id] = true;
+    }
+    // Spawn poppies for new records
+    for (var k = 0; k < records.length; k++) {
+      var rec = records[k];
+      if (!existingIds[rec.id]) {
+        var label = rec.created_by + "\n" + formatTime(rec.created_at);
+        var rx = Math.random() * viewportWidth;
+        var ry = Math.random() * viewportHeight;
+        spawnPoppyAt(rx, ry, rec.id, label);
+      }
+    }
+    // Remove poppies whose IDs are no longer on the server
+    for (var m = poppies.length - 1; m >= 0; m--) {
+      var p = poppies[m];
+      if (p.dbId != null && !serverIds[p.dbId]) {
+        if (p.el && p.el.parentNode) p.el.parentNode.removeChild(p.el);
+        poppies.splice(m, 1);
       }
     }
   }
 
   function startRemotePolling() {
-    const { url, intervalMs } = getRemoteConfig();
-    if (!url) return;
     if (remotePollTimer) clearInterval(remotePollTimer);
-    const tick = async function () {
-      const target = await fetchTargetCount(url);
-      if (typeof target === "number") reconcileCount(target);
+    var tick = async function () {
+      var records = await fetchPoppies();
+      reconcilePoppies(records);
     };
     tick();
-    remotePollTimer = setInterval(tick, intervalMs);
-  }
-
-  // Sequential addition: add one poppy every 1–10 minutes (randomized)
-  function scheduleNextAddition() {
-    if (addTimer) clearTimeout(addTimer);
-    const delayMs = Math.floor(randomBetween(MIN_DELAY_MS, MAX_DELAY_MS));
-    addTimer = setTimeout(function () {
-      try {
-        spawnRandom(1);
-      } catch (_) {}
-      scheduleNextAddition();
-    }, delayMs);
+    remotePollTimer = setInterval(tick, POLL_INTERVAL_MS);
   }
 
   function toggleHelp() {
@@ -265,70 +295,15 @@
         clearInterval(remotePollTimer);
         remotePollTimer = null;
       }
-      if (addTimer) {
-        clearTimeout(addTimer);
-        addTimer = null;
-      }
     } else {
       start();
       startRemotePolling();
-      if (!addTimer) scheduleNextAddition();
     }
   });
 
-  // Start the animation loop (no poppies shown until user action)
+  // Start the animation loop — poppies are populated from Supabase
   start();
-  // Spawn exactly one poppy initially, then add one every 1–10 minutes
-  try {
-    spawnRandom(1);
-  } catch (e) {}
-  scheduleNextAddition();
-  // Start remote polling if configured
   startRemotePolling();
-
-  // --- Fetch test: hit example.org after 5s and show result ---
-  setTimeout(async function () {
-    const box = document.createElement("div");
-    box.id = "fetch-result";
-    box.textContent = "Fetching https://httpbin.org/get …";
-    document.body.appendChild(box);
-    try {
-      const SUPABASE_URL = "https://xhmagpbrqyrvptbawjqa.supabase.co";
-      const ANON_KEY = "sb_publishable_rNS7quNUnYko_0SUdrHiUw_H9UNRfDx";
-      const headers = {
-        apikey: ANON_KEY,
-        Authorization: `Bearer ${ANON_KEY}`,
-        "Content-Type": "application/json",
-      };
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/poppies`, {
-        method: "GET",
-        headers,
-      });
-
-      console.log("status", res.status);
-
-      const body = await res.json().catch(() => null);
-
-      box.textContent =
-        "✓ " +
-        res.status +
-        " " +
-        res.statusText +
-        "\n\n" +
-        JSON.stringify(body);
-
-      box.textContent =
-        "✓ " +
-        res.status +
-        " " +
-        res.statusText +
-        "\n\n" +
-        JSON.stringify(body).slice(0, 500);
-    } catch (err) {
-      box.classList.add("error");
-      box.textContent = "✗ Fetch failed:\n" + err;
-    }
-  }, 100);
 
   // Expose a tiny control surface for manual tweaking
   window.Poppy = {
@@ -338,13 +313,6 @@
     clear: clearAll,
     count: function () {
       return poppies.length;
-    },
-    setRemoteUrl: function (url, intervalMs) {
-      if (typeof url === "string")
-        localStorage.setItem("poppy.remote.url", url);
-      if (typeof intervalMs === "number")
-        localStorage.setItem("poppy.remote.intervalMs", String(intervalMs));
-      startRemotePolling();
     },
   };
 })();

@@ -5,7 +5,7 @@
   const help = document.getElementById("help");
   if (!root) return;
 
-  const IMAGE_SRC = "images/coolguy_nobg.webp";
+  const IMAGE_SRC = "images/poppy_screensaver.webp";
 
   /** @typedef {{ el: HTMLDivElement, img: HTMLImageElement, x: number, y: number, vx: number, vy: number, size: number, r: number, dbId: number|null }} Poppy */
   /** @type {Poppy[]} */
@@ -16,6 +16,7 @@
   let lastTime = performance.now();
   let rafId = null;
   let remotePollTimer = null;
+  let isInitialFetch = true;
 
   function randomBetween(min, max) {
     return Math.random() * (max - min) + min;
@@ -34,7 +35,8 @@
     wrapper.style.pointerEvents = "none";
 
     const img = document.createElement("img");
-    img.src = IMAGE_SRC;
+    // Cache-busting query param to ensure the animation plays each time
+    img.src = IMAGE_SRC + "?t=" + Date.now() + Math.random();
     img.alt = "";
     img.draggable = false;
 
@@ -167,14 +169,29 @@
     for (var j = 0; j < records.length; j++) {
       serverIds[records[j].id] = true;
     }
+    // Sort by creation time so oldest appear first
+    records.sort(function (a, b) {
+      return new Date(a.created_at) - new Date(b.created_at);
+    });
     // Spawn poppies for new records
+    var stagger = isInitialFetch;
+    if (isInitialFetch) isInitialFetch = false;
     for (var k = 0; k < records.length; k++) {
       var rec = records[k];
       if (!existingIds[rec.id]) {
-        var label = rec.created_by + "\n" + formatTime(rec.created_at);
-        var rx = Math.random() * viewportWidth;
-        var ry = Math.random() * viewportHeight;
-        spawnPoppyAt(rx, ry, rec.id, label);
+        (function (r) {
+          var spawn = function () {
+            var label = r.created_by + "\n" + formatTime(r.created_at);
+            var rx = Math.random() * viewportWidth;
+            var ry = Math.random() * viewportHeight;
+            spawnPoppyAt(rx, ry, r.id, label);
+          };
+          if (stagger) {
+            setTimeout(spawn, Math.max(0, k + (Math.random() - 0.5)) * 1000);
+          } else {
+            spawn();
+          }
+        })(rec);
       }
     }
     // Remove poppies whose IDs are no longer on the server

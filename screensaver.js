@@ -7,7 +7,7 @@
 
   const IMAGE_SRC = "images/poppy_screensaver.webp";
 
-  /** @typedef {{ el: HTMLDivElement, img: HTMLImageElement, x: number, y: number, vx: number, vy: number, size: number, r: number, dbId: number|null }} Poppy */
+  /** @typedef {{ el: HTMLDivElement, img: HTMLImageElement, x: number, y: number, vx: number, vy: number, size: number, r: number, dbId: number|null, createdAt: string|null }} Poppy */
   /** @type {Poppy[]} */
   const poppies = [];
 
@@ -24,6 +24,56 @@
 
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
+  }
+
+  var FADE_START_DAYS = 7; // start fading after 7 days
+  var FADE_END_DAYS = 28; // fully transparent at 28 days
+
+  // Age-based glow tiers + opacity
+  function getGlowForAge(createdAt) {
+    if (!createdAt) {
+      // Default red glow for local poppies without a timestamp
+      return {
+        filter: "drop-shadow(0 0 5px rgba(255,70,70,0.32)) drop-shadow(0 0 10px rgba(255,40,40,0.12))",
+        opacity: 1,
+        expired: false,
+      };
+    }
+    var ageMs = Date.now() - new Date(createdAt).getTime();
+    var ageHours = ageMs / 3600000;
+    var ageDays = ageHours / 24;
+
+    // Opacity: full until FADE_START_DAYS, then linear fade to 0 at FADE_END_DAYS
+    var opacity = 1;
+    if (ageDays >= FADE_END_DAYS) {
+      return { filter: "", opacity: 0.3, expired: true };
+    } else if (ageDays > FADE_START_DAYS) {
+      opacity = 1 - (ageDays - FADE_START_DAYS) / (FADE_END_DAYS - FADE_START_DAYS) * 0.7;
+    }
+    var filter;
+    if (ageHours < 1) {
+      // Newborn: bright golden glow
+      filter = "drop-shadow(0 0 8px rgba(255,220,50,0.5)) drop-shadow(0 0 16px rgba(255,180,30,0.25))";
+    } else if (ageHours < 24) {
+      // Young: warm orange glow
+      filter = "drop-shadow(0 0 6px rgba(255,140,40,0.4)) drop-shadow(0 0 12px rgba(255,100,20,0.18))";
+    } else if (ageDays < 7) {
+      // 1-7 days: standard red glow
+      filter = "drop-shadow(0 0 5px rgba(255,70,70,0.32)) drop-shadow(0 0 10px rgba(255,40,40,0.12))";
+    } else {
+      // Ancient (7+ days): deep purple glow
+      filter = "drop-shadow(0 0 6px rgba(180,80,255,0.38)) drop-shadow(0 0 14px rgba(140,40,220,0.18))";
+    }
+
+    return { filter: filter, opacity: opacity, expired: false };
+  }
+
+  function applyGlow(el, createdAt) {
+    var glow = getGlowForAge(createdAt);
+    el.style.filter = glow.filter;
+    el.style.webkitFilter = glow.filter;
+    el.style.opacity = glow.opacity;
+    return glow.expired;
   }
 
   function createPoppyElement(size, label) {
@@ -61,7 +111,7 @@
     }
   }
 
-  function spawnPoppyAt(x, y, dbId, label) {
+  function spawnPoppyAt(x, y, dbId, label, createdAt) {
     const size = Math.round(randomBetween(110, 240));
     const speed = randomBetween(28, 80); // px per second
     const angle = randomBetween(0, Math.PI * 2);
@@ -70,6 +120,7 @@
     const rotationDeg = Math.round(randomBetween(0, 360));
 
     const { wrapper, img } = createPoppyElement(size, label || null);
+    applyGlow(wrapper, createdAt || null);
     root.appendChild(wrapper);
 
     // Keep entirely on-screen initially
@@ -91,6 +142,7 @@
       size: size,
       r: rotationDeg,
       dbId: dbId || null,
+      createdAt: createdAt || null,
     };
     poppies.push(poppy);
   }
@@ -184,7 +236,7 @@
             var label = r.created_by + "\n" + formatTime(r.created_at);
             var rx = Math.random() * viewportWidth;
             var ry = Math.random() * viewportHeight;
-            spawnPoppyAt(rx, ry, r.id, label);
+            spawnPoppyAt(rx, ry, r.id, label, r.created_at);
           };
           if (stagger) {
             setTimeout(spawn, Math.max(0, k + (Math.random() - 0.5)) * 1000);
@@ -219,9 +271,20 @@
     help.classList.toggle("hidden");
   }
 
+  let lastGlowUpdate = 0;
+  var GLOW_UPDATE_INTERVAL = 60000; // refresh glow tiers every 60 seconds
+
   function animate(now) {
     const dt = Math.min(0.05, (now - lastTime) / 1000); // clamp large frames to avoid tunneling
     lastTime = now;
+
+    // Periodically refresh glow colors as poppies age
+    if (now - lastGlowUpdate > GLOW_UPDATE_INTERVAL) {
+      lastGlowUpdate = now;
+      for (let g = 0; g < poppies.length; g++) {
+        applyGlow(poppies[g].el, poppies[g].createdAt);
+      }
+    }
 
     const maxX = viewportWidth;
     const maxY = viewportHeight;

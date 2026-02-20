@@ -39,29 +39,7 @@
         will-change: transform, filter;
         pointer-events: none;
         user-select: none;
-        /* subtle red glow around the poppy (applied to wrapper for broader support) */
-        -webkit-filter: drop-shadow(0 0 5px rgba(255, 70, 70, 0.32))
-          drop-shadow(0 0 10px rgba(255, 40, 40, 0.12));
-        filter: drop-shadow(0 0 5px rgba(255, 70, 70, 0.32))
-          drop-shadow(0 0 10px rgba(255, 40, 40, 0.12));
-      }
-      .poppy::before {
-        content: "";
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
-        width: 110%;
-        height: 110%;
-        background: radial-gradient(
-          ellipse at center,
-          rgba(255, 70, 70, 0.13) 0%,
-          rgba(255, 40, 40, 0.05) 48%,
-          rgba(255, 20, 20, 0.015) 68%,
-          rgba(0, 0, 0, 0) 83%
-        );
-        filter: blur(4px);
-        pointer-events: none;
+        /* glow is applied dynamically via JS based on poppy age */
       }
       .poppy img {
         display: block;

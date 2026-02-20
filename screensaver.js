@@ -27,14 +27,16 @@
   }
 
   var FADE_START_DAYS = 7; // start fading after 7 days
-  var FADE_END_DAYS = 28; // fully transparent at 28 days
+  var FADE_END_DAYS = 28; // keep a very low shade from 28+ days
+  var BASE_RED_GLOW =
+    "drop-shadow(0 0 8px rgba(255,70,70,0.5)) drop-shadow(0 0 18px rgba(255,30,30,0.28))";
 
   // Age-based glow tiers + opacity
   function getGlowForAge(createdAt) {
     if (!createdAt) {
       // Default red glow for local poppies without a timestamp
       return {
-        filter: "drop-shadow(0 0 5px rgba(255,70,70,0.32)) drop-shadow(0 0 10px rgba(255,40,40,0.12))",
+        filter: BASE_RED_GLOW,
         opacity: 1,
         expired: false,
       };
@@ -46,23 +48,29 @@
     // Opacity: full until FADE_START_DAYS, then linear fade to 0 at FADE_END_DAYS
     var opacity = 1;
     if (ageDays >= FADE_END_DAYS) {
-      return { filter: "", opacity: 0.3, expired: true };
+      return { filter: BASE_RED_GLOW, opacity: 0.3, expired: false };
     } else if (ageDays > FADE_START_DAYS) {
-      opacity = 1 - (ageDays - FADE_START_DAYS) / (FADE_END_DAYS - FADE_START_DAYS) * 0.7;
+      opacity = 1 - (ageDays - FADE_START_DAYS) / (FADE_END_DAYS - FADE_START_DAYS) * 0.4;
     }
     var filter;
     if (ageHours < 1) {
       // Newborn: bright golden glow
-      filter = "drop-shadow(0 0 8px rgba(255,220,50,0.5)) drop-shadow(0 0 16px rgba(255,180,30,0.25))";
+      filter =
+        BASE_RED_GLOW +
+        " drop-shadow(0 0 10px rgba(255,220,50,0.45)) drop-shadow(0 0 18px rgba(255,180,30,0.22))";
     } else if (ageHours < 24) {
       // Young: warm orange glow
-      filter = "drop-shadow(0 0 6px rgba(255,140,40,0.4)) drop-shadow(0 0 12px rgba(255,100,20,0.18))";
+      filter =
+        BASE_RED_GLOW +
+        " drop-shadow(0 0 8px rgba(255,140,40,0.35)) drop-shadow(0 0 16px rgba(255,100,20,0.18))";
     } else if (ageDays < 7) {
       // 1-7 days: standard red glow
-      filter = "drop-shadow(0 0 5px rgba(255,70,70,0.32)) drop-shadow(0 0 10px rgba(255,40,40,0.12))";
+      filter = BASE_RED_GLOW;
     } else {
-      // Ancient (7+ days): deep purple glow
-      filter = "drop-shadow(0 0 6px rgba(180,80,255,0.38)) drop-shadow(0 0 14px rgba(140,40,220,0.18))";
+      // Ancient (7+ days): keep red visible with a subtle purple tint
+      filter =
+        BASE_RED_GLOW +
+        " drop-shadow(0 0 6px rgba(180,80,255,0.22)) drop-shadow(0 0 12px rgba(140,40,220,0.12))";
     }
 
     return { filter: filter, opacity: opacity, expired: false };
@@ -102,12 +110,17 @@
     return { wrapper, img };
   }
 
-  function formatTime(isoStr) {
+  function formatLabelParts(isoStr) {
     try {
       var d = new Date(isoStr);
-      return d.toLocaleString();
+      var dateOptions = { month: "long", day: "numeric", year: "numeric" };
+      var timeOptions = { hour: "2-digit", minute: "2-digit" };
+      return {
+        date: d.toLocaleDateString("en-US", dateOptions),
+        time: d.toLocaleTimeString("en-US", timeOptions),
+      };
     } catch (_) {
-      return isoStr;
+      return { date: isoStr, time: "" };
     }
   }
 
@@ -165,10 +178,22 @@
     poppies.length = 0;
   }
 
+  function removePoppyAt(index) {
+    var p = poppies[index];
+    if (!p) return;
+    if (p.el && p.el.parentNode) {
+      p.el.parentNode.removeChild(p.el);
+    }
+    poppies.splice(index, 1);
+  }
+
   // --- Remote control: fetch poppies from Supabase ---
   const SUPABASE_URL = "https://xhmagpbrqyrvptbawjqa.supabase.co";
   const ANON_KEY = "sb_publishable_rNS7quNUnYko_0SUdrHiUw_H9UNRfDx";
   const POLL_INTERVAL_MS = 10000;
+  const CREATOR_STORAGE_KEY = "poppy_creator_name";
+  const AUTO_PURGE_INTERVAL_MS = 60 * 60 * 1000; // auto-purge DB once per hour
+  let lastAutoPurgeAt = 0;
 
   function getStatusBox() {
     return document.getElementById("fetch-result");
@@ -209,6 +234,133 @@
     }
   }
 
+  function getOrAskCreatorName() {
+    var saved = (localStorage.getItem(CREATOR_STORAGE_KEY) || "").trim();
+    if (saved) return saved;
+    var entered = window.prompt("What is your name?");
+    var name = (entered || "").trim();
+    if (!name) return null;
+    localStorage.setItem(CREATOR_STORAGE_KEY, name);
+    return name;
+  }
+
+  async function addPoppyToDb() {
+    var box = getStatusBox();
+    var name = getOrAskCreatorName();
+    if (!name) {
+      if (box) {
+        box.classList.add("error");
+        box.textContent = "Add cancelled: name is required.";
+      }
+      return false;
+    }
+    try {
+      var res = await fetch(SUPABASE_URL + "/rest/v1/poppies", {
+        method: "POST",
+        headers: {
+          apikey: ANON_KEY,
+          Authorization: "Bearer " + ANON_KEY,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({ created_by: name }),
+      });
+      if (!res.ok) {
+        var text = await res.text();
+        throw new Error(res.status + " " + (text || res.statusText));
+      }
+      if (box) {
+        box.classList.remove("error");
+        box.textContent = "Poppy added!";
+      }
+      return true;
+    } catch (err) {
+      if (box) {
+        box.classList.add("error");
+        box.textContent = "Add failed: " + err;
+      }
+      return false;
+    }
+  }
+
+  async function deletePoppyById(id) {
+    if (!Number.isFinite(id)) return false;
+    const box = getStatusBox();
+    try {
+      const res = await fetch(
+        SUPABASE_URL + "/rest/v1/poppies?id=eq." + encodeURIComponent(String(id)),
+        {
+          method: "DELETE",
+          headers: {
+            apikey: ANON_KEY,
+            Authorization: "Bearer " + ANON_KEY,
+            Prefer: "return=representation",
+          },
+        }
+      );
+      if (!res.ok) {
+        if (box) {
+          box.classList.add("error");
+          box.textContent = "Delete failed: " + res.status + " " + res.statusText;
+        }
+        return false;
+      }
+      const data = await res.json();
+      if (box) {
+        box.classList.remove("error");
+        box.textContent = "Deleted " + data.length + " poppy from db";
+      }
+      return data.length > 0;
+    } catch (err) {
+      if (box) {
+        box.classList.add("error");
+        box.textContent = "Delete failed: " + err;
+      }
+      return false;
+    }
+  }
+
+  async function deleteOldPoppiesFromDb(maxAgeDays, silent) {
+    const box = getStatusBox();
+    const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
+    const cutoffIso = cutoff.toISOString();
+    try {
+      const res = await fetch(
+        SUPABASE_URL +
+          "/rest/v1/poppies?created_at=lt." +
+          encodeURIComponent(cutoffIso),
+        {
+          method: "DELETE",
+          headers: {
+            apikey: ANON_KEY,
+            Authorization: "Bearer " + ANON_KEY,
+            Prefer: "return=representation",
+          },
+        }
+      );
+      if (!res.ok) {
+        if (box && !silent) {
+          box.classList.add("error");
+          box.textContent =
+            "Purge failed: " + res.status + " " + res.statusText;
+        }
+        return 0;
+      }
+      const data = await res.json();
+      if (box && !silent) {
+        box.classList.remove("error");
+        box.textContent = "Purged " + data.length + " old poppies from db";
+      }
+      return data.length;
+    } catch (err) {
+      if (box && !silent) {
+        box.classList.add("error");
+        box.textContent = "Purge failed: " + err;
+      }
+      return 0;
+    }
+  }
+
   function reconcilePoppies(records) {
     if (!records) return;
     // Build a set of IDs we already have
@@ -233,7 +385,8 @@
       if (!existingIds[rec.id]) {
         (function (r) {
           var spawn = function () {
-            var label = r.created_by + "\n" + formatTime(r.created_at);
+            var parts = formatLabelParts(r.created_at);
+            var label = r.created_by + "\n" + parts.date + "\n" + parts.time;
             var rx = Math.random() * viewportWidth;
             var ry = Math.random() * viewportHeight;
             spawnPoppyAt(rx, ry, r.id, label, r.created_at);
@@ -250,8 +403,7 @@
     for (var m = poppies.length - 1; m >= 0; m--) {
       var p = poppies[m];
       if (p.dbId != null && !serverIds[p.dbId]) {
-        if (p.el && p.el.parentNode) p.el.parentNode.removeChild(p.el);
-        poppies.splice(m, 1);
+        removePoppyAt(m);
       }
     }
   }
@@ -259,6 +411,10 @@
   function startRemotePolling() {
     if (remotePollTimer) clearInterval(remotePollTimer);
     var tick = async function () {
+      if (Date.now() - lastAutoPurgeAt > AUTO_PURGE_INTERVAL_MS) {
+        await deleteOldPoppiesFromDb(FADE_END_DAYS, true);
+        lastAutoPurgeAt = Date.now();
+      }
       var records = await fetchPoppies();
       reconcilePoppies(records);
     };
@@ -281,7 +437,7 @@
     // Periodically refresh glow colors as poppies age
     if (now - lastGlowUpdate > GLOW_UPDATE_INTERVAL) {
       lastGlowUpdate = now;
-      for (let g = 0; g < poppies.length; g++) {
+      for (let g = poppies.length - 1; g >= 0; g--) {
         applyGlow(poppies[g].el, poppies[g].createdAt);
       }
     }
@@ -367,6 +523,19 @@
     }
   });
 
+  var addBtn = document.getElementById("add-poppy-btn");
+  if (addBtn) {
+    addBtn.addEventListener("click", async function () {
+      addBtn.disabled = true;
+      var ok = await addPoppyToDb();
+      if (ok) {
+        var records = await fetchPoppies();
+        reconcilePoppies(records);
+      }
+      addBtn.disabled = false;
+    });
+  }
+
   // Pause animation while tab not visible (saves energy)
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) {
@@ -393,6 +562,28 @@
     clear: clearAll,
     count: function () {
       return poppies.length;
+    },
+    deleteFromDb: async function (id) {
+      var deleted = await deletePoppyById(Number(id));
+      var records = await fetchPoppies();
+      reconcilePoppies(records);
+      return deleted;
+    },
+    purgeOldFromDb: async function (days) {
+      var maxAgeDays = Number(days);
+      if (!Number.isFinite(maxAgeDays) || maxAgeDays <= 0) {
+        maxAgeDays = FADE_END_DAYS;
+      }
+      var removed = await deleteOldPoppiesFromDb(maxAgeDays, false);
+      var records = await fetchPoppies();
+      reconcilePoppies(records);
+      return removed;
+    },
+    setCreatorName: function (name) {
+      var n = String(name || "").trim();
+      if (!n) return false;
+      localStorage.setItem(CREATOR_STORAGE_KEY, n);
+      return true;
     },
   };
 })();

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Add a Poppy</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #000;
+        min-height: 100%;
+        color: #bbb;
+        font-family:
+          -apple-system,
+          BlinkMacSystemFont,
+          Segoe UI,
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      .container {
+        max-width: 400px;
+        margin: 0 auto;
+        padding: 60px 20px;
+        text-align: center;
+      }
+      h1 {
+        color: #e8e8e8;
+        font-size: 24px;
+        margin: 0 0 8px;
+      }
+      .subtitle {
+        color: #9aa0a6;
+        font-size: 14px;
+        margin-bottom: 32px;
+      }
+      label {
+        display: block;
+        text-align: left;
+        color: #9aa0a6;
+        font-size: 13px;
+        margin-bottom: 6px;
+      }
+      input[type="text"] {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #333;
+        background: rgba(20, 20, 20, 0.85);
+        color: #e8e8e8;
+        font-size: 16px;
+        font-family: inherit;
+        outline: none;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+      }
+      input[type="text"]:focus {
+        border-color: #ff6b6b;
+      }
+      button {
+        margin-top: 20px;
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-radius: 8px;
+        background: #c0392b;
+        color: #fff;
+        font-size: 16px;
+        font-family: inherit;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      button:hover {
+        background: #e74c3c;
+      }
+      button:active {
+        background: #a93226;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      #status {
+        margin-top: 16px;
+        font-size: 14px;
+        min-height: 20px;
+      }
+      #status.ok {
+        color: #7feba0;
+      }
+      #status.err {
+        color: #ff6b6b;
+      }
+      a {
+        color: #9cd2ff;
+        text-decoration: none;
+      }
+      .back {
+        margin-top: 24px;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Add a Poppy</h1>
+      <p class="subtitle">Plant a new poppy in the screensaver.</p>
+
+      <label for="name-input">Your name</label>
+      <input
+        type="text"
+        id="name-input"
+        placeholder="Enter your name"
+        autocomplete="off"
+      />
+
+      <button id="add-btn" type="button">Add poppy</button>
+
+      <div id="status"></div>
+      <div class="back"><a href="index.html">Back to screensaver</a></div>
+    </div>
+
+    <script>
+      (function () {
+        var SUPABASE_URL = "https://xhmagpbrqyrvptbawjqa.supabase.co";
+        var ANON_KEY = "sb_publishable_rNS7quNUnYko_0SUdrHiUw_H9UNRfDx";
+        var STORAGE_KEY = "poppy_creator_name";
+
+        var nameInput = document.getElementById("name-input");
+        var addBtn = document.getElementById("add-btn");
+        var status = document.getElementById("status");
+
+        // Restore name from localStorage
+        var saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) nameInput.value = saved;
+
+        // Persist name on change
+        nameInput.addEventListener("input", function () {
+          localStorage.setItem(STORAGE_KEY, nameInput.value);
+        });
+
+        addBtn.addEventListener("click", async function () {
+          var name = nameInput.value.trim();
+          if (!name) {
+            status.className = "err";
+            status.textContent = "Please enter your name.";
+            nameInput.focus();
+            return;
+          }
+
+          addBtn.disabled = true;
+          status.className = "";
+          status.textContent = "Adding...";
+
+          try {
+            var res = await fetch(SUPABASE_URL + "/rest/v1/poppies", {
+              method: "POST",
+              headers: {
+                apikey: ANON_KEY,
+                Authorization: "Bearer " + ANON_KEY,
+                "Content-Type": "application/json",
+                Prefer: "return=minimal",
+              },
+              body: JSON.stringify({ created_by: name }),
+            });
+
+            if (!res.ok) {
+              var text = await res.text();
+              throw new Error(res.status + " " + (text || res.statusText));
+            }
+
+            status.className = "ok";
+            status.textContent = "Poppy added!";
+          } catch (err) {
+            status.className = "err";
+            status.textContent = "Error: " + err.message;
+          } finally {
+            addBtn.disabled = false;
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

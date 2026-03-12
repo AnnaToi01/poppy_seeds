@@ -26,8 +26,8 @@
     return Math.min(max, Math.max(min, value));
   }
 
-  var FADE_START_DAYS = 7; // start fading after 7 days
-  var FADE_END_DAYS = 28; // keep a very low shade from 28+ days
+  var FADE_START_DAYS = 1; // start fading after 1 day
+  var FADE_END_DAYS = 14; // keep a very low shade from 14+ days
   var BASE_RED_GLOW =
     "drop-shadow(0 0 8px rgba(255,70,70,0.5)) drop-shadow(0 0 18px rgba(255,30,30,0.28))";
 
@@ -392,7 +392,7 @@
             spawnPoppyAt(rx, ry, r.id, label, r.created_at);
           };
           if (stagger) {
-            setTimeout(spawn, Math.max(0, k + (Math.random() - 0.5)) * 1000);
+            setTimeout(spawn, Math.max(0, (k / records.length) + (Math.random() - 0.5)) * 3000);
           } else {
             spawn();
           }

@@ -222,7 +222,7 @@
       if (Array.isArray(data)) {
         if (box) {
           box.classList.remove("error");
-          box.textContent = data.length + " poppies in db";
+          box.textContent = data.length + " poppies";
         }
         return data;
       }
@@ -565,6 +565,11 @@
   });
 
   var addBtn = document.getElementById("add-poppy-btn");
+  var urlParams = new URLSearchParams(window.location.search);
+  if (addBtn && urlParams.get("button") === "0") {
+    addBtn.style.display = "none";
+    addBtn = null;
+  }
   if (addBtn) {
     addBtn.addEventListener("click", async function () {
       addBtn.disabled = true;

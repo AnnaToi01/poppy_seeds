@@ -7,7 +7,7 @@
 
   const IMAGE_SRC = "images/poppy_screensaver.webp";
 
-  /** @typedef {{ el: HTMLDivElement, img: HTMLImageElement, x: number, y: number, vx: number, vy: number, size: number, r: number, dbId: number|null, createdAt: string|null }} Poppy */
+  /** @typedef {{ el: HTMLDivElement, img: HTMLImageElement, x: number, y: number, vx: number, vy: number, size: number, r: number, rOffset: number, dbId: number|null, createdAt: string|null }} Poppy */
   /** @type {Poppy[]} */
   const poppies = [];
 
@@ -130,7 +130,8 @@
     const angle = randomBetween(0, Math.PI * 2);
     const vx = Math.cos(angle) * speed;
     const vy = Math.sin(angle) * speed;
-    const rotationDeg = Math.round(randomBetween(0, 360));
+    const rotationOffset = Math.round(randomBetween(0, 360));
+    const rotationDeg = rotationOffset + (angle * 180) / Math.PI;
 
     const { wrapper, img } = createPoppyElement(size, label || null);
     applyGlow(wrapper, createdAt || null);
@@ -154,6 +155,7 @@
       vy: vy,
       size: size,
       r: rotationDeg,
+      rOffset: rotationOffset,
       dbId: dbId || null,
       createdAt: createdAt || null,
     };
@@ -445,6 +447,44 @@
     const maxX = viewportWidth;
     const maxY = viewportHeight;
 
+    // Mutual repulsion: nudge direction without changing speed
+    var REPULSION_PADDING = 30; // extra reach beyond the poppies' radii
+    var REPULSION_STRENGTH = 20; // px/s² at maximum overlap
+    for (let i = 0; i < poppies.length; i++) {
+      const a = poppies[i];
+      const ax = a.x + a.size / 2;
+      const ay = a.y + a.size / 2;
+      let fx = 0;
+      let fy = 0;
+      for (let j = 0; j < poppies.length; j++) {
+        if (i === j) continue;
+        const b = poppies[j];
+        const bx = b.x + b.size / 2;
+        const by = b.y + b.size / 2;
+        const dx = ax - bx;
+        const dy = ay - by;
+        const minDist = (a.size + b.size) / 2 + REPULSION_PADDING;
+        const distSq = dx * dx + dy * dy;
+        if (distSq > 0.0001 && distSq < minDist * minDist) {
+          const dist = Math.sqrt(distSq);
+          const falloff = 1 - dist / minDist;
+          const force = falloff * falloff * REPULSION_STRENGTH;
+          fx += (dx / dist) * force;
+          fy += (dy / dist) * force;
+        }
+      }
+      if (fx !== 0 || fy !== 0) {
+        const speed = Math.sqrt(a.vx * a.vx + a.vy * a.vy);
+        let nvx = a.vx + fx * dt;
+        let nvy = a.vy + fy * dt;
+        const nSpeed = Math.sqrt(nvx * nvx + nvy * nvy);
+        if (nSpeed > 0.0001 && speed > 0) {
+          a.vx = (nvx / nSpeed) * speed;
+          a.vy = (nvy / nSpeed) * speed;
+        }
+      }
+    }
+
     for (let i = 0; i < poppies.length; i++) {
       const p = poppies[i];
       const size = p.size;
@@ -470,6 +510,7 @@
 
       p.x = nx;
       p.y = ny;
+      p.r = p.rOffset + (Math.atan2(p.vy, p.vx) * 180) / Math.PI;
       p.el.style.transform =
         "translate3d(" + nx + "px," + ny + "px,0) rotate(" + p.r + "deg)";
     }

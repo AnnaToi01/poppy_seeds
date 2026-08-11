@@ -194,23 +194,52 @@
   const ANON_KEY = "sb_publishable_rNS7quNUnYko_0SUdrHiUw_H9UNRfDx";
   const POLL_INTERVAL_MS = 10000;
   const CREATOR_STORAGE_KEY = "poppy_creator_name";
-  const AUTO_PURGE_INTERVAL_MS = 60 * 60 * 1000; // auto-purge DB once per hour
-  let lastAutoPurgeAt = 0;
+  const FETCH_MAX_AGE_DAYS = 30;
 
   function getStatusBox() {
     return document.getElementById("fetch-result");
   }
 
-  async function fetchPoppies() {
-    const box = getStatusBox();
+  // Total row count in the DB (including poppies older than the fetch window).
+  async function fetchTotalCount() {
     try {
-      const res = await fetch(SUPABASE_URL + "/rest/v1/poppies", {
+      const res = await fetch(SUPABASE_URL + "/rest/v1/poppies?select=id", {
+        method: "HEAD",
         cache: "no-store",
         headers: {
           apikey: ANON_KEY,
           Authorization: "Bearer " + ANON_KEY,
+          Prefer: "count=exact",
+          Range: "0-0",
         },
       });
+      // Content-Range looks like "0-0/90" (or "*/0" when empty).
+      const range = res.headers.get("content-range") || "";
+      const total = Number(range.split("/")[1]);
+      return Number.isFinite(total) ? total : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  async function fetchPoppies() {
+    const box = getStatusBox();
+    const sinceIso = new Date(
+      Date.now() - FETCH_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
+    ).toISOString();
+    try {
+      const res = await fetch(
+        SUPABASE_URL +
+          "/rest/v1/poppies?created_at=gte." +
+          encodeURIComponent(sinceIso),
+        {
+          cache: "no-store",
+          headers: {
+            apikey: ANON_KEY,
+            Authorization: "Bearer " + ANON_KEY,
+          },
+        }
+      );
       if (!res.ok) {
         if (box) {
           box.classList.add("error");
@@ -221,8 +250,12 @@
       const data = await res.json();
       if (Array.isArray(data)) {
         if (box) {
+          const total = await fetchTotalCount();
           box.classList.remove("error");
-          box.textContent = data.length + " poppies";
+          box.textContent =
+            data.length +
+            " poppies" +
+            (total === null ? "" : " / " + total + " total");
         }
         return data;
       }
@@ -413,10 +446,6 @@
   function startRemotePolling() {
     if (remotePollTimer) clearInterval(remotePollTimer);
     var tick = async function () {
-      if (Date.now() - lastAutoPurgeAt > AUTO_PURGE_INTERVAL_MS) {
-        await deleteOldPoppiesFromDb(FADE_END_DAYS, true);
-        lastAutoPurgeAt = Date.now();
-      }
       var records = await fetchPoppies();
       reconcilePoppies(records);
     };
